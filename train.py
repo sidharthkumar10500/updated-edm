@@ -17,6 +17,11 @@ import dnnlib
 from torch_utils import distributed as dist
 from training import training_loop
 
+# next 3 lines only if you want to debug with only 1 gpu
+# import os 
+# os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
+# os.environ["CUDA_VISIBLE_DEVICES"]="3" # for debugging purposes to only run on one gpu
+
 import warnings
 warnings.filterwarnings('ignore', 'Grad strides do not match bucket view strides') # False warning printed by PyTorch 1.12.
 
@@ -41,15 +46,15 @@ def parse_int_list(s):
 @click.command()
 
 # Main options.
-@click.option('--outdir',        help='Where to save the results', metavar='DIR',                   type=str, required=True)
-@click.option('--data',          help='Path to the dataset', metavar='ZIP|DIR',                     type=str, required=True)
+@click.option('--outdir',        help='Where to save the results', metavar='DIR',                   type=str, required=True, default = 'out')
+@click.option('--data',          help='Path to the dataset', metavar='ZIP|DIR',                     type=str, required=True, default = 'edm_t2sh_data_6channel')
 @click.option('--cond',          help='Train class-conditional model', metavar='BOOL',              type=bool, default=False, show_default=True)
 @click.option('--arch',          help='Network architecture', metavar='ddpmpp|ncsnpp|adm',          type=click.Choice(['ddpmpp', 'ncsnpp', 'adm']), default='ddpmpp', show_default=True)
 @click.option('--precond',       help='Preconditioning & loss function', metavar='vp|ve|edm',       type=click.Choice(['vp', 've', 'edm']), default='edm', show_default=True)
 
 # Hyperparameters.
 @click.option('--duration',      help='Training duration', metavar='MIMG',                          type=click.FloatRange(min=0, min_open=True), default=200, show_default=True)
-@click.option('--batch',         help='Total batch size', metavar='INT',                            type=click.IntRange(min=1), default=512, show_default=True)
+@click.option('--batch',         help='Total batch size', metavar='INT',                            type=click.IntRange(min=1), default=2, show_default=True)
 @click.option('--batch-gpu',     help='Limit batch size per GPU', metavar='INT',                    type=click.IntRange(min=1))
 @click.option('--cbase',         help='Channel multiplier  [default: varies]', metavar='INT',       type=int)
 @click.option('--cres',          help='Channels per resolution  [default: varies]', metavar='LIST', type=parse_int_list)
@@ -94,7 +99,8 @@ def main(**kwargs):
 
     # Initialize config dict.
     c = dnnlib.EasyDict()
-    c.dataset_kwargs = dnnlib.EasyDict(class_name='training.dataset.ImageFolderDataset', path=opts.data, use_labels=opts.cond, xflip=opts.xflip, cache=opts.cache)
+    # changed the dataset class to work with numpy files instead
+    c.dataset_kwargs = dnnlib.EasyDict(class_name='training.dataset.NumpyFolderDataset', path=opts.data, use_labels=opts.cond, xflip=opts.xflip, cache=opts.cache)
     c.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=opts.workers, prefetch_factor=2)
     c.network_kwargs = dnnlib.EasyDict()
     c.loss_kwargs = dnnlib.EasyDict()
@@ -104,7 +110,7 @@ def main(**kwargs):
     try:
         dataset_obj = dnnlib.util.construct_class_by_name(**c.dataset_kwargs)
         dataset_name = dataset_obj.name
-        c.dataset_kwargs.resolution = dataset_obj.resolution # be explicit about dataset resolution
+        # c.dataset_kwargs.resolution = dataset_obj.resolution # be explicit about dataset resolution, dont need it now
         c.dataset_kwargs.max_size = len(dataset_obj) # be explicit about dataset size
         if opts.cond and not dataset_obj.has_labels:
             raise click.ClickException('--cond=True requires labels specified in dataset.json')

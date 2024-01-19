@@ -53,7 +53,36 @@ def is_image_ext(fname: Union[str, Path]) -> bool:
     return f'.{ext}' in PIL.Image.EXTENSION
 
 #----------------------------------------------------------------------------
+def open_npy_folder(source_dir, *, max_images: Optional[int]):
+    input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if os.path.isfile(f)]
+    arch_fnames = {fname: os.path.relpath(fname, source_dir).replace('\\', '/') for fname in input_images}
+    max_idx = maybe_min(len(input_images), max_images)
 
+    # Load labels.
+    labels = dict()
+    meta_fname = os.path.join(source_dir, 'dataset.json')
+    if os.path.isfile(meta_fname):
+        with open(meta_fname, 'r') as file:
+            data = json.load(file)['labels']
+            if data is not None:
+                labels = {x[0]: x[1] for x in data}
+
+    # No labels available => determine from top-level directory names.
+    if len(labels) == 0:
+        toplevel_names = {arch_fname: arch_fname.split('/')[0] if '/' in arch_fname else '' for arch_fname in arch_fnames.values()}
+        toplevel_indices = {toplevel_name: idx for idx, toplevel_name in enumerate(sorted(set(toplevel_names.values())))}
+        if len(toplevel_indices) > 1:
+            labels = {arch_fname: toplevel_indices[toplevel_name] for arch_fname, toplevel_name in toplevel_names.items()}
+
+    def iterate_images():
+        for idx, fname in enumerate(input_images):
+            img = np.array(np.load(fname))#changed to load numpy files
+            yield dict(img=img, label=labels.get(arch_fnames.get(fname)))
+            if idx >= max_idx - 1:
+                break
+    return max_idx, iterate_images()
+
+#----------------------------------------------------------------------------
 def open_image_folder(source_dir, *, max_images: Optional[int]):
     input_images = [str(f) for f in sorted(Path(source_dir).rglob('*')) if is_image_ext(f) and os.path.isfile(f)]
     arch_fnames = {fname: os.path.relpath(fname, source_dir).replace('\\', '/') for fname in input_images}
@@ -213,7 +242,7 @@ def make_transform(
         img = PIL.Image.fromarray(img)
         ww = width if width is not None else w
         hh = height if height is not None else h
-        img = img.resize((ww, hh), PIL.Image.Resampling.LANCZOS)
+        img = img.resize((ww, hh), PIL.Image.LANCZOS)#PIL dependencies have changed
         return np.array(img)
 
     def center_crop(width, height, img):
@@ -260,7 +289,7 @@ def open_dataset(source, *, max_images: Optional[int]):
         if source.rstrip('/').endswith('_lmdb'):
             return open_lmdb(source, max_images=max_images)
         else:
-            return open_image_folder(source, max_images=max_images)
+            return open_npy_folder(source, max_images=max_images)#changed by sidharth to load npy files
     elif os.path.isfile(source):
         if os.path.basename(source) == 'cifar-10-python.tar.gz':
             return open_cifar10(source, max_images=max_images)
@@ -308,8 +337,8 @@ def open_dest(dest: str) -> Tuple[str, Callable[[str, Union[bytes, str]], None],
 #----------------------------------------------------------------------------
 
 @click.command()
-@click.option('--source',     help='Input directory or archive name', metavar='PATH',   type=str, required=True)
-@click.option('--dest',       help='Output directory or archive name', metavar='PATH',  type=str, required=True)
+@click.option('--source',     help='Input directory or archive name', metavar='PATH',   type=str, default='edm_t2sh_data/', required=True)
+@click.option('--dest',       help='Output directory or archive name', metavar='PATH',  type=str, default='datasets/edm_t2sh_data', required=True)
 @click.option('--max-images', help='Maximum number of images to output', metavar='INT', type=int)
 @click.option('--transform',  help='Input crop/resize mode', metavar='MODE',            type=click.Choice(['center-crop', 'center-crop-wide']))
 @click.option('--resolution', help='Output resolution (e.g., 512x512)', metavar='WxH',  type=parse_tuple)
@@ -399,7 +428,8 @@ def main(
         archive_fname = f'{idx_str[:5]}/img{idx_str}.png'
 
         # Apply crop and resize.
-        img = transform_image(image['img'])
+        # img = transform_image(image['img'])
+        img = image['img']
         if img is None:
             continue
 

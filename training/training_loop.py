@@ -125,7 +125,7 @@ def training_loop(
         for round_idx in range(num_accumulation_rounds):
             with misc.ddp_sync(ddp, (round_idx == num_accumulation_rounds - 1)):
                 images, labels = next(dataset_iterator)
-                images = images.to(device).to(torch.float32) / 127.5 - 1
+                images = images.to(device).to(torch.float32) #/ 127.5 - 1 NOTE removing normalisation since MRI data pre-normalised
                 labels = labels.to(device)
                 loss = loss_fn(net=ddp, images=images, labels=labels, augment_pipe=augment_pipe)
                 training_stats.report('Loss/loss', loss)

@@ -295,6 +295,9 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
 
         # Save images.
         images_np = (images * 127.5 + 128).clip(0, 255).to(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
+        # numpy images without the 255 noramlize that is used for the png files
+        images_np_without_normalize = images.permute(0, 2, 3, 1).cpu().numpy()
+        print('shape of generated images:-  ',images_np_without_normalize.shape)
         for seed, image_np in zip(batch_seeds, images_np):
             image_dir = os.path.join(outdir, f'{seed-seed%1000:06d}') if subdirs else outdir
             os.makedirs(image_dir, exist_ok=True)
@@ -302,8 +305,9 @@ def main(network_pkl, outdir, subdirs, seeds, class_idx, max_batch_size, device=
             if image_np.shape[2] == 1:
                 PIL.Image.fromarray(image_np[:, :, 0], 'L').save(image_path)
             else:
-                PIL.Image.fromarray(image_np, 'RGB').save(image_path)
-
+                # PIL.Image.fromarray(image_np, 'RGB').save(image_path)# we dont have 3 channel input, so next line for saving 2 channel to complex from real and then absolute value
+                PIL.Image.fromarray(np.abs(image_np[:, :, 0] + 1j*image_np[:, :, 1]), 'L').save(image_path)
+        np.save(os.path.join(image_dir, 'generated_samples.npy'), images_np_without_normalize)
     # Done.
     torch.distributed.barrier()
     dist.print0('Done.')
